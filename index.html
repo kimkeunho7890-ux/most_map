@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>유모스트 권역별 실적 분석 시스템</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; background: #f8f9fa; }
+        #map { height: 100vh; width: 100%; }
+        
+        /* 실시간 현황판 패널 */
+        .control-panel { 
+            position: absolute; top: 20px; right: 20px; z-index: 1000; 
+            background: white; padding: 20px; border-radius: 15px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2); width: 280px; 
+        }
+        
+        .stat-card {
+            background: #fff; padding: 15px; border-radius: 10px; margin-bottom: 15px;
+            border: 1px solid #eee; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .stat-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .stat-label { color: #666; }
+        .stat-value { font-weight: bold; }
+        
+        .filter-group { margin-bottom: 15px; }
+        label { font-size: 12px; color: #495057; font-weight: bold; display: block; margin-bottom: 5px; }
+        select { 
+            width: 100%; padding: 10px; border-radius: 8px; 
+            border: 1px solid #dee2e6; background: #fff; font-size: 14px; cursor: pointer;
+        }
+
+        /* 원형 비중 마커 스타일 */
+        .pie-marker {
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; color: white; font-weight: bold; font-size: 11px;
+            border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            position: relative; overflow: hidden;
+        }
+        .marker-text { z-index: 5; position: relative; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+
+        .legend { line-height: 1.8; font-size: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+        .dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="control-panel">
+    <h3 style="margin: 0 0 15px 0; color: #212529; font-size: 18px; text-align: center;">📊 실시간 실적 현황</h3>
+    
+    <div class="stat-card">
+        <div class="stat-item">
+            <span class="stat-label">유모스트 합산</span>
+            <span id="statUmost" class="stat-value" style="color:#e74c3c">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">타사 합산</span>
+            <span id="statOthers" class="stat-value" style="color:#3498db">0</span>
+        </div>
+        <div class="stat-item" style="margin-top:10px; padding-top:10px; border-top: 1px dashed #ddd;">
+            <span class="stat-label" style="font-weight:bold;">현재 권역 비중</span>
+            <span id="statPercent" class="stat-value" style="font-size:20px; color:#212529;">0%</span>
+        </div>
+    </div>
+
+    <div class="filter-group">
+        <label>1단계: 광역 권역 선택</label>
+        <select id="mainRegion" onchange="handleMainRegionChange()">
+            <option value="all">전체 권역</option>
+            <option value="부산">부산광역시</option>
+            <option value="울산">울산광역시</option>
+            <option value="대구">대구광역시</option>
+            <option value="경북">경상북도</option>
+            <option value="경남">경상남도</option>
+        </select>
+    </div>
+    
+    <div class="filter-group">
+        <label>2단계: 상세 지역 선택</label>
+        <select id="subRegion" onchange="updateMap()">
+            <option value="all">상세 지역 전체</option>
+        </select>
+    </div>
+
+    <div class="legend">
+        <span class="dot" style="background-color: #e74c3c;"></span> 유모스트 비중 (빨강)<br>
+        <span class="dot" style="background-color: #3498db;"></span> 타사 비중 (파랑)
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    var map = L.map('map').setView([35.8, 128.6], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    var allData = [];
+    var markerLayer = L.layerGroup().addTo(map);
+
+    // CSV 데이터 로드
+    Papa.parse("최종_주소지별실적.csv", {
+        download: true, header: true,
+        complete: function(results) {
+            allData = results.data.filter(d => d.위도 && d.경도);
+            updateMap(); 
+        }
+    });
+
+    function handleMainRegionChange() {
+        var mainVal = document.getElementById('mainRegion').value;
+        var subSelect = document.getElementById('subRegion');
+        subSelect.innerHTML = '<option value="all">상세 지역 전체</option>';
+        
+        if (mainVal !== 'all') {
+            var filteredSub = allData
+                .filter(d => d.지역합.startsWith(mainVal))
+                .map(d => d.지역합.replace(mainVal + ' ', '').trim());
+            
+            var uniqueSubs = [...new Set(filteredSub)].sort();
+            uniqueSubs.forEach(s => {
+                var opt = document.createElement('option');
+                opt.value = s; opt.innerHTML = s;
+                subSelect.appendChild(opt);
+            });
+        }
+        updateMap();
+    }
+
+    function updateMap() {
+        markerLayer.clearLayers();
+        var mainVal = document.getElementById('mainRegion').value;
+        var subVal = document.getElementById('subRegion').value;
+        
+        var bounds = [];
+        var totalUmostSum = 0;
+        var totalOthersSum = 0;
+
+        allData.forEach(function(d) {
+            var isMainMatch = (mainVal === 'all' || d.지역합.startsWith(mainVal));
+            var isSubMatch = (subVal === 'all' || d.지역합.endsWith(subVal));
+            
+            if (!isMainMatch || !isSubMatch) return;
+
+            var lat = parseFloat(d.위도), lng = parseFloat(d.경도);
+            var totalAtAddr = parseInt(d.총실적) || 0;
+            var s1 = parseInt(d.실적1) || 0;
+            var s2 = parseInt(d.실적2) || 0;
+            var g1 = (d.거래점1 || "").trim();
+            var g2 = (d.거래점2 || "").trim();
+
+            // [로직 적용] 유모스트 이름이 있는 실적만 합산
+            var u_at_addr = 0;
+            if (g1 === '유모스트') u_at_addr += s1;
+            if (g2 === '유모스트') u_at_addr += s2;
+            
+            var o_at_addr = totalAtAddr - u_at_addr;
+
+            totalUmostSum += u_at_addr;
+            totalOthersSum += o_at_addr;
+
+            var u_ratio = totalAtAddr > 0 ? (u_at_addr / totalAtAddr) * 100 : 0;
+            
+            // 비중별 원형 마커 생성
+            var markerHtml = `<div class="pie-marker" style="width:36px; height:36px; background: conic-gradient(#e74c3c 0% ${u_ratio}%, #3498db ${u_ratio}% 100%);">
+                                <span class="marker-text">${totalAtAddr}</span>
+                             </div>`;
+
+            var icon = L.divIcon({ className: 'custom-div-icon', html: markerHtml, iconSize: [36, 36], iconAnchor: [18, 18] });
+            var marker = L.marker([lat, lng], { icon: icon });
+
+            marker.bindPopup(`
+                <div style="width:200px">
+                    <b style="font-size:14px;">${d.판매점명} (${d.POS코드})</b><hr style="margin:5px 0; border:0.5px solid #eee">
+                    <b>전체: ${totalAtAddr}건</b><br>
+                    <span style="color:#e74c3c">유모스트: ${u_at_addr}건</span> / 
+                    <span style="color:#3498db">타사: ${o_at_addr}건</span><br>
+                    <small>매장 내 점유율: ${u_ratio.toFixed(1)}%</small>
+                </div>`, { closeButton: false, offset: L.point(0, -10) });
+
+            marker.on('mouseover', function() { this.openPopup(); });
+            marker.on('mouseout', function() { this.closePopup(); });
+            markerLayer.addLayer(marker);
+            bounds.push([lat, lng]);
+        });
+
+        // 상단 현황판 수치 업데이트
+        document.getElementById('statUmost').innerText = totalUmostSum.toLocaleString() + '건';
+        document.getElementById('statOthers').innerText = totalOthersSum.toLocaleString() + '건';
+        var currentTotal = totalUmostSum + totalOthersSum;
+        var totalPercent = currentTotal > 0 ? (totalUmostSum / currentTotal * 100).toFixed(1) : 0;
+        document.getElementById('statPercent').innerText = totalPercent + '%';
+
+        if (bounds.length > 0 && (mainVal !== 'all' || subVal !== 'all')) {
+            map.fitBounds(bounds);
+        }
+    }
+</script>
+</body>
+</html>
