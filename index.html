@@ -10,7 +10,6 @@
         body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; background: #f8f9fa; overflow: hidden; }
         #map { height: 100vh; width: 100%; }
         
-        /* 설정 패널 기본 (PC용) */
         .control-panel { 
             position: absolute; top: 15px; right: 15px; z-index: 1000; 
             background: white; padding: 15px; border-radius: 12px; 
@@ -18,19 +17,17 @@
             transition: all 0.3s ease;
         }
 
-        /* [모바일 전용 스타일] 화면 너비가 480px 이하일 때 */
         @media (max-width: 480px) {
-            .control-panel { 
-                width: 180px; /* 가로폭을 크게 줄임 */
-                padding: 10px; 
-                top: 10px; right: 10px;
-            }
+            .control-panel { width: 180px; padding: 10px; top: 10px; right: 10px; }
             .stat-title { font-size: 10px !important; }
             .company-name, .company-value { font-size: 11px !important; }
             .rank-num { padding: 1px 4px !important; font-size: 9px !important; }
             select { font-size: 12px !important; padding: 6px !important; }
             .toggle-btn { font-size: 11px !important; padding: 5px 0 !important; }
             #totalInfo { font-size: 10px !important; }
+            /* 모바일 대리점 필터 스타일 조정 */
+            #agencyFilters { max-height: 70px !important; padding: 4px !important; gap: 3px !important; }
+            .chk-label { font-size: 11px !important; }
         }
 
         #collapsibleContent { overflow: hidden; transition: max-height 0.3s ease; }
@@ -56,8 +53,16 @@
         .is-umost .rank-num { background: #e74c3c; color: white; }
         .is-umost .company-name, .is-umost .company-value { color: #e74c3c; font-weight: bold; }
 
-        .filter-group { margin-bottom: 4px; }
+        .filter-group { margin-bottom: 6px; }
         select { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd; background: #fff; font-size: 14px; }
+
+        /* 대리점 체크박스 리스트 스타일 */
+        #agencyFilters { 
+            max-height: 90px; overflow-y: auto; background: #fff; border: 1px solid #ddd; 
+            border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px; 
+        }
+        .chk-label { display: flex; align-items: center; cursor: pointer; font-size: 12px; color: #444; }
+        .chk-label input { margin: 0 6px 0 0; cursor: pointer; }
 
         .pie-marker { display: flex; align-items: center; justify-content: center; border-radius: 50%; color: white; font-weight: bold; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
     </style>
@@ -73,6 +78,7 @@
                 총 합계: <span id="totalSum">0</span>건
             </div>
         </div>
+        
         <div class="filter-group">
             <select id="mainRegion" onchange="handleMainRegionChange()">
                 <option value="all">권역 선택</option>
@@ -88,6 +94,15 @@
                 <option value="all">상세 지역</option>
             </select>
         </div>
+        
+        <!-- 대리점 다중 선택 영역 추가 -->
+        <div class="filter-group">
+            <div style="font-size: 11px; color: #777; font-weight: bold; margin-bottom: 4px; padding-left: 2px;">조회 대리점 선택</div>
+            <div id="agencyFilters">
+                <!-- 체크박스가 자동으로 생성됩니다 -->
+            </div>
+        </div>
+
     </div>
     <button class="toggle-btn" onclick="togglePanel()" id="toggleBtn">▲ 접기</button>
 </div>
@@ -102,13 +117,14 @@
 
     var allData = [];
     var markers = [];
+    var currentSelectedAgencies = []; // 선택된 대리점 목록 저장
 
     Papa.parse("최종_주소지별실적.csv", {
         download: true, header: true,
         complete: function(results) {
             allData = results.data.filter(d => d.위도 && d.경도);
             initMarkers();
-            calculateVisibleStats();
+            populateAgencies(); // 대리점 목록 추출 및 필터 생성
         }
     });
 
@@ -119,6 +135,7 @@
         btn.innerHTML = isCollapsed ? '▼ 펼치기' : '▲ 접기';
     }
 
+    // 1. 초기 마커 데이터 구성
     function initMarkers() {
         allData.forEach(function(d) {
             var lat = parseFloat(d.위도), lng = parseFloat(d.경도);
@@ -126,18 +143,7 @@
             var g1 = (d.거래점1 || "").trim(), g2 = (d.거래점2 || "").trim();
             var addr = (d.주소 || "").trim();
 
-            var u_score = 0;
-            if (g1 === '유모스트') u_score += s1;
-            if (g2 === '유모스트') u_score += s2;
-            var u_ratio = s_total > 0 ? (u_score / s_total) * 100 : 0;
-            
-            var icon = L.divIcon({
-                className: 'custom-div-icon',
-                html: `<div class="pie-marker" style="width:32px; height:32px; background: conic-gradient(#e74c3c 0% ${u_ratio}%, #3498db ${u_ratio}% 100%);"><span class="marker-text">${s_total}</span></div>`,
-                iconSize: [32, 32], iconAnchor: [16, 16]
-            });
-
-            var marker = L.marker([lat, lng], { icon: icon });
+            var marker = L.marker([lat, lng]);
             var popupHtml = `<div style="font-size:13px; min-width:180px; max-width:220px;">
                                 <b style="font-size:14px; color:#333;">${d.판매점명}</b><br>
                                 <small style="color:#666;">${d.POS코드}</small><br>
@@ -157,22 +163,94 @@
             marker.s_total = s_total;
             marker.region_full = d.지역합;
 
-            marker.addTo(map);
             markers.push(marker);
         });
     }
 
+    // 2. 대리점 체크박스 생성
+    function populateAgencies() {
+        var agencySet = new Set();
+        markers.forEach(m => {
+            m.salesData.forEach(item => agencySet.add(item.name));
+        });
+        
+        var agencies = Array.from(agencySet).sort();
+        var container = document.getElementById('agencyFilters');
+        
+        var html = `<label class="chk-label"><input type="checkbox" id="selectAllAgencies" checked onchange="toggleAllAgencies(this)"> <b style="color:#2c3e50;">전체 선택</b></label>
+                    <hr style="margin: 4px 0; border: 0.5px solid #eee;">`;
+        
+        agencies.forEach(ag => {
+            html += `<label class="chk-label"><input type="checkbox" class="agency-chk" value="${ag}" checked onchange="applyFilters()"> <span>${ag}</span></label>`;
+        });
+        
+        container.innerHTML = html;
+        applyFilters(); // 초기 필터 적용
+    }
+
+    // 3. 전체 선택/해제 기능
+    function toggleAllAgencies(source) {
+        var checkboxes = document.querySelectorAll('.agency-chk');
+        checkboxes.forEach(chk => chk.checked = source.checked);
+        applyFilters();
+    }
+
+    // 4. 필터 적용 및 마커(아이콘) 재계산 핵심 로직
+    function applyFilters() {
+        var checkboxes = document.querySelectorAll('.agency-chk:checked');
+        currentSelectedAgencies = Array.from(checkboxes).map(chk => chk.value);
+        
+        var allCheckboxes = document.querySelectorAll('.agency-chk');
+        document.getElementById('selectAllAgencies').checked = (checkboxes.length === allCheckboxes.length);
+
+        markers.forEach(marker => {
+            // 마커의 실적 중 체크된 대리점의 실적만 추출
+            var relevantSales = marker.salesData.filter(item => currentSelectedAgencies.includes(item.name));
+            
+            if (relevantSales.length > 0) {
+                // 선택된 대리점 실적이 있으면 지도에 표시
+                if (!map.hasLayer(marker)) map.addLayer(marker);
+                
+                // 마커의 크기(숫자)와 비율을 '선택된 대리점 기준'으로 재계산
+                var newTotal = 0;
+                var newUmost = 0;
+                relevantSales.forEach(item => {
+                    newTotal += item.val;
+                    if(item.name === '유모스트') newUmost += item.val;
+                });
+                var newRatio = newTotal > 0 ? (newUmost / newTotal) * 100 : 0;
+                
+                var newIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div class="pie-marker" style="width:32px; height:32px; background: conic-gradient(#e74c3c 0% ${newRatio}%, #3498db ${newRatio}% 100%);"><span class="marker-text">${newTotal}</span></div>`,
+                    iconSize: [32, 32], iconAnchor: [16, 16]
+                });
+                marker.setIcon(newIcon);
+                
+            } else {
+                // 선택된 대리점 실적이 전혀 없으면 지도에서 숨김
+                if (map.hasLayer(marker)) map.removeLayer(marker);
+            }
+        });
+        
+        calculateVisibleStats(); // 현황판 업데이트
+    }
+
+    // 5. 실시간 통계 계산 (선택된 대리점 데이터만 합산)
     function calculateVisibleStats() {
         var bounds = map.getBounds();
         var companyStats = {};
         var totalVisibleSum = 0;
         
         markers.forEach(function(marker) {
-            if (bounds.contains(marker.getLatLng())) {
-                totalVisibleSum += marker.s_total;
+            // 지도에 떠 있고 화면 안에 있는 마커만 계산
+            if (map.hasLayer(marker) && bounds.contains(marker.getLatLng())) {
                 marker.salesData.forEach(function(item) {
-                    if (!companyStats[item.name]) companyStats[item.name] = 0;
-                    companyStats[item.name] += item.val;
+                    if (currentSelectedAgencies.includes(item.name)) { // 체크된 업체만 합산
+                        if (!companyStats[item.name]) companyStats[item.name] = 0;
+                        companyStats[item.name] += item.val;
+                        totalVisibleSum += item.val;
+                    }
                 });
             }
         });
@@ -211,7 +289,7 @@
                          </div>`;
         }
 
-        document.getElementById('rankList').innerHTML = listHtml || "데이터 없음";
+        document.getElementById('rankList').innerHTML = listHtml || "<div style='text-align:center; color:#999; font-size:12px; margin-top:5px;'>선택된 데이터 없음</div>";
         document.getElementById('totalSum').innerText = totalVisibleSum.toLocaleString();
     }
 
@@ -237,7 +315,10 @@
         var subVal = document.getElementById('subRegion').value;
         var bounds = [];
         markers.forEach(function(marker) {
-            if ((mainVal === 'all' || marker.region_full.startsWith(mainVal)) && (subVal === 'all' || marker.region_full.endsWith(subVal))) bounds.push(marker.getLatLng());
+            if ((mainVal === 'all' || marker.region_full.startsWith(mainVal)) && (subVal === 'all' || marker.region_full.endsWith(subVal))) {
+                // 해당 지역에 속하고, 지도에 표시(필터 통과)된 마커를 기준으로 이동
+                if (map.hasLayer(marker)) bounds.push(marker.getLatLng());
+            }
         });
         if (bounds.length > 0) map.fitBounds(bounds);
     }
