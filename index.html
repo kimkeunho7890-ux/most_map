@@ -114,7 +114,7 @@
     // ===== V-World 배경지도 설정 =====
     // 브이월드(www.vworld.kr) > 오픈API > 인증키 발급에서 받은 키를 넣으세요.
     // 키 발급 시 '서비스 URL'에 실제 사이트 주소(예: https://xxxx.onrender.com)와 테스트용 localhost를 등록해야 합니다.
-    var VWORLD_KEY = ' EA7E3017-EC77-45B1-A994-84318229B02A';
+    var VWORLD_KEY = 'EA7E3017-EC77-45B1-A994-84318229B02A'.trim();
 
     var map = L.map('map', { zoomControl: false, minZoom: 6, maxZoom: 19 }).setView([35.8, 128.6], 8);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -210,19 +210,23 @@
 
     // 2. 대리점 체크박스 생성
     function populateAgencies() {
-        var agencySet = new Set();
+        // 대리점별 전체 실적 합계 계산 후 실적 내림차순 정렬 (동률이면 이름순)
+        var agencyTotals = {};
         markers.forEach(m => {
-            m.salesData.forEach(item => agencySet.add(item.name));
+            m.salesData.forEach(item => {
+                agencyTotals[item.name] = (agencyTotals[item.name] || 0) + item.val;
+            });
         });
         
-        var agencies = Array.from(agencySet).sort();
+        var agencies = Object.keys(agencyTotals).sort((a, b) =>
+            (agencyTotals[b] - agencyTotals[a]) || a.localeCompare(b, 'ko'));
         var container = document.getElementById('agencyFilters');
         
         var html = `<label class="chk-label"><input type="checkbox" id="selectAllAgencies" checked onchange="toggleAllAgencies(this)"> <b style="color:#2c3e50;">전체 선택</b></label>
                     <hr style="margin: 4px 0; border: 0.5px solid #eee;">`;
         
         agencies.forEach(ag => {
-            html += `<label class="chk-label"><input type="checkbox" class="agency-chk" value="${ag}" checked onchange="applyFilters()"> <span>${ag}</span></label>`;
+            html += `<label class="chk-label"><input type="checkbox" class="agency-chk" value="${ag}" checked onchange="applyFilters()"> <span>${ag}</span><span style="margin-left:auto; color:#999; font-size:11px;">${agencyTotals[ag].toLocaleString()}건</span></label>`;
         });
         
         container.innerHTML = html;
