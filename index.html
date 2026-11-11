@@ -6,26 +6,31 @@
     <title>상권실적 지도로보기</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="config.js"></script>
     <style>
         body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; background: #f8f9fa; overflow: hidden; }
         #map { height: 100vh; width: 100%; }
-        
-        .control-panel { 
-            position: absolute; top: 15px; right: 15px; z-index: 1000; 
-            background: white; padding: 15px; border-radius: 12px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.15); width: 270px; 
+
+        .control-panel {
+            position: absolute; top: 15px; right: 15px; z-index: 1000;
+            background: white; padding: 15px; border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15); width: 300px;
             transition: all 0.3s ease;
         }
 
         @media (max-width: 480px) {
-            .control-panel { width: 180px; padding: 10px; top: 10px; right: 10px; }
+            .control-panel { width: 232px; padding: 10px; top: 10px; right: 10px; }
+            .company-name { min-width: 3.2em; }
+            .is-umost { padding: 3px 1px; }
             .stat-title { font-size: 10px !important; }
-            .company-name, .company-value { font-size: 11px !important; }
+            .company-name { font-size: 11px !important; }
+            .company-value { font-size: 10px !important; }
             .rank-num { padding: 1px 4px !important; font-size: 9px !important; }
             select { font-size: 12px !important; padding: 6px !important; }
             .toggle-btn { font-size: 11px !important; padding: 5px 0 !important; }
             #totalInfo { font-size: 10px !important; }
             .rank-chk { width: 12px !important; height: 12px !important; }
+            .date-row label { font-size: 10px !important; }
         }
 
         #collapsibleContent { overflow: hidden; transition: max-height 0.3s ease; }
@@ -39,50 +44,72 @@
             display: flex; align-items: center; justify-content: center;
         }
 
+        /* 기준일자 */
+        .date-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+        .date-row label { font-size: 11px; color: #555; font-weight: bold; white-space: nowrap; }
+        .date-row select { flex: 1; padding: 7px 8px; font-weight: bold; color: #2c3e50; }
+
         .stat-card { background: #fff; padding: 10px; border-radius: 10px; margin-bottom: 8px; border: 2px solid #e74c3c; }
-        .stat-title { font-size: 11px; color: #e74c3c; font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
-        .select-all { font-size: 10px; color: #777; font-weight: bold; display: flex; align-items: center; gap: 3px; cursor: pointer; }
+        .stat-title { font-size: 11px; color: #e74c3c; font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+        .stat-title #statTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .select-all { font-size: 10px; color: #777; font-weight: bold; display: flex; align-items: center; gap: 3px; cursor: pointer; flex-shrink: 0; }
         .select-all input { margin: 0; cursor: pointer; }
+        .scope-hint { font-size: 10px; color: #999; text-align: center; margin: -4px 0 6px; }
 
         /* 순위 리스트: 5개까지 보이고 나머지는 스크롤 */
         #rankList { position: relative; overflow-y: auto; }
-        .company-item { cursor: pointer; background: #fff; }
+        .company-item { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; border-bottom: 1px solid #f1f1f1; padding-bottom: 3px; align-items: center; cursor: pointer; background: #fff; }
         .rank-chk { margin: 0 5px 0 0; cursor: pointer; flex-shrink: 0; }
+        .rank-num { font-size: 10px; background: #eee; color: #777; padding: 2px 5px; border-radius: 4px; margin-right: 4px; min-width: 12px; text-align: center; flex-shrink: 0; }
+        .company-name { color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-grow: 1; }
+        .company-value { font-weight: bold; margin-left: 3px; white-space: nowrap; font-size: 12px; }
         .company-item.unchecked .company-name, .company-item.unchecked .company-value { color: #bbb; font-weight: normal; }
         .company-item.unchecked .rank-num { background: #f5f5f5; color: #ccc; }
-        /* 유모스트는 스크롤해도 항상 보이도록 고정 */
-        .company-item.is-umost { position: sticky; top: 0; bottom: 0; z-index: 1; }
-        
-        .company-item { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; border-bottom: 1px solid #f1f1f1; padding-bottom: 3px; align-items: center; }
-        .rank-num { font-size: 10px; background: #eee; color: #777; padding: 2px 5px; border-radius: 4px; margin-right: 4px; min-width: 12px; text-align: center; }
-        .company-name { color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-grow: 1; }
-        .company-value { font-weight: bold; margin-left: 3px; white-space: nowrap; }
-        
+
         .is-umost { background: #fff5f5; border-radius: 4px; padding: 3px; border-bottom: none !important; }
         .is-umost .rank-num { background: #e74c3c; color: white; }
         .is-umost .company-name, .is-umost .company-value { color: #e74c3c; font-weight: bold; }
+        /* 유모스트는 스크롤해도 항상 보이도록 고정 */
+        .company-item.is-umost { position: sticky; top: 0; bottom: 0; z-index: 1; }
 
         .filter-group { margin-bottom: 6px; }
         select { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd; background: #fff; font-size: 14px; }
 
         .pie-marker { display: flex; align-items: center; justify-content: center; border-radius: 50%; color: white; font-weight: bold; font-size: 10px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+
+        /* 로딩 */
+        #loading { position: absolute; inset: 0; z-index: 2000; background: rgba(255,255,255,0.75); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: #555; }
+        #loading.hidden { display: none; }
+        .spinner { width: 34px; height: 34px; border: 4px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
     </style>
 </head>
 <body>
 
+<div id="loading"><div class="spinner"></div><div id="loadingText">실적 데이터를 불러오는 중...</div></div>
+
 <div class="control-panel" id="mainPanel">
     <div id="collapsibleContent">
+        <div class="date-row">
+            <label for="dateSelect">기준일자</label>
+            <select id="dateSelect" onchange="onDateChange()">
+                <option value="">불러오는 중...</option>
+            </select>
+        </div>
+
         <div class="stat-card">
             <div class="stat-title">
-                <span>화면내 실적 순위</span>
+                <span id="statTitle">화면내 실적 순위</span>
                 <label class="select-all"><input type="checkbox" id="selectAllAgencies" checked onchange="toggleAllAgencies(this)">전체</label>
             </div>
+            <div class="scope-hint" id="scopeHint" style="display:none;"></div>
             <div id="rankList"></div>
             <div id="totalInfo" style="margin-top:8px; border-top:1px dashed #ddd; padding-top:6px; font-size:11px; text-align:center; font-weight:bold;">
-                총 합계: <span id="totalSum">0</span>건
+                총 합계: <span id="totalStores">0</span>개점 / <span id="totalSum">0</span>건
             </div>
         </div>
-        
+
         <div class="filter-group">
             <select id="mainRegion" onchange="handleMainRegionChange()">
                 <option value="all">권역 선택</option>
@@ -98,7 +125,6 @@
                 <option value="all">상세 지역</option>
             </select>
         </div>
-
     </div>
     <button class="toggle-btn" onclick="togglePanel()" id="toggleBtn">▲ 접기</button>
 </div>
@@ -107,14 +133,20 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // ===== V-World 배경지도 설정 =====
-    // 브이월드(www.vworld.kr) > 오픈API > 인증키 발급에서 받은 키를 넣으세요.
-    // 키 발급 시 '서비스 URL'에 실제 사이트 주소(예: https://xxxx.onrender.com)와 테스트용 localhost를 등록해야 합니다.
-    var VWORLD_KEY = 'EA7E3017-EC77-45B1-A994-84318229B02A'.trim();
+    var CFG = window.APP_CONFIG || {};
+
+    // 상세지역 선택 후 이만큼 더 확대하면(마우스 휠 약 4칸) '화면내 실적'으로 전환
+    var ZOOM_TO_VIEW_MODE = 4;
+
+    // ===== V-World 배경지도 =====
+    var VWORLD_KEY = (CFG.VWORLD_KEY || '').trim();
 
     var map = L.map('map', { zoomControl: false, minZoom: 6, maxZoom: 19 }).setView([35.8, 128.6], 8);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
+    function osmLayer() {
+        return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+    }
     var VW_ATTR = '&copy; <a href="https://www.vworld.kr" target="_blank">국토교통부 V-World</a>';
     function vworldLayer(layer, ext) {
         return L.tileLayer('https://api.vworld.kr/req/wmts/1.0.0/' + VWORLD_KEY + '/' + layer + '/{z}/{y}/{x}.' + ext, {
@@ -122,49 +154,151 @@
         });
     }
 
-    var keyReady = VWORLD_KEY && VWORLD_KEY !== 'ENTER_YOUR_VWORLD_KEY';
-    if (keyReady) {
-        var vwBase  = vworldLayer('Base', 'png');        // 일반지도
-        var vwGray  = vworldLayer('gray', 'png');        // 회색지도 (마커가 잘 보임)
-        var vwSat   = vworldLayer('Satellite', 'jpeg');  // 영상지도
-        var vwHyb   = vworldLayer('Hybrid', 'png');      // 영상 위 도로/지명 라벨
-        var vwSatHyb = L.layerGroup([vwSat, vwHyb]);
+    if (VWORLD_KEY) {
+        var vwBase   = vworldLayer('Base', 'png');        // 일반지도
+        var vwGray   = vworldLayer('gray', 'png');        // 회색지도
+        var vwSatHyb = L.layerGroup([vworldLayer('Satellite', 'jpeg'), vworldLayer('Hybrid', 'png')]); // 위성+라벨
 
         vwBase.addTo(map);
-        L.control.layers(
-            { '일반지도': vwBase, '회색지도': vwGray, '위성지도': vwSatHyb },
-            null, { position: 'bottomleft', collapsed: true }
-        ).addTo(map);
+        L.control.layers({ '일반지도': vwBase, '회색지도': vwGray, '위성지도': vwSatHyb }, null,
+                         { position: 'bottomleft', collapsed: true }).addTo(map);
 
-        // 키 오류(미등록 도메인 등)로 타일이 계속 실패하면 OSM으로 자동 전환
+        // 키 오류(미등록 도메인/만료)로 타일이 계속 실패하면 OSM으로 자동 전환
         var tileErrors = 0, fellBack = false;
         vwBase.on('tileerror', function() {
             if (fellBack || ++tileErrors < 8) return;
             fellBack = true;
             map.removeLayer(vwBase);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+            osmLayer().addTo(map);
             console.warn('V-World 타일 로드 실패: 인증키 또는 등록된 서비스 URL을 확인하세요. OSM 지도로 전환합니다.');
         });
     } else {
-        // 키 미입력 시 기존 OSM 지도로 동작
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
-        console.warn('VWORLD_KEY가 설정되지 않아 OSM 지도로 표시합니다.');
+        osmLayer().addTo(map);
     }
 
+    // ===== 상태 =====
     var allData = [];
     var markers = [];
-    var allAgencies = [];             // 전체 대리점 목록
-    var selectedAgencies = new Set(); // 체크된 대리점
+    var allAgencies = [];
+    var selectedAgencies = new Set();
+    var firstLoad = true;
+    var dataCache = {};        // 날짜별 CSV 캐시 { '20261109': rows }
+    var dateFiles = [];        // [{ date:'20261109', id:'...', name:'...' }] 최신순
 
-    Papa.parse("최종_주소지별실적.csv", {
-        download: true, header: true, skipEmptyLines: true,
-        transformHeader: h => h.replace(/^\uFEFF/, '').trim(), // BOM 제거
-        complete: function(results) {
-            allData = results.data.filter(d => d.위도 && d.경도);
-            initMarkers();
-            populateAgencies(); // 대리점 목록 추출 및 필터 생성
+    // 상세지역 집계 모드 상태: 선택한 지역명과 선택 직후 줌 레벨
+    var regionScope = null;    // { name: '경남 창원시', label: '창원시', baseZoom: 11 }
+
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function fmtDate(d) { return d.slice(0,4) + '-' + d.slice(4,6) + '-' + d.slice(6,8); }
+
+    function setLoading(on, text) {
+        document.getElementById('loading').classList.toggle('hidden', !on);
+        if (text) document.getElementById('loadingText').textContent = text;
+    }
+
+    // ===== Appwrite (REST, 로그인 없이 공개 읽기) =====
+    function awUrl(path, params) {
+        var u = new URL(CFG.APPWRITE_ENDPOINT + path);
+        u.searchParams.set('project', CFG.APPWRITE_PROJECT);
+        (params || []).forEach(p => u.searchParams.append(p[0], p[1]));
+        return u.toString();
+    }
+
+    // 파일명이나 파일ID에서 8자리 날짜(YYYYMMDD) 추출
+    function extractDate(file) {
+        var m = (file.$id + ' ' + file.name).match(/(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])/);
+        return m ? m[0] : null;
+    }
+
+    async function listDateFiles() {
+        var all = [], offset = 0, LIMIT = 100;
+        while (true) {
+            var res = await fetch(awUrl('/storage/buckets/' + CFG.BUCKET_ID + '/files', [
+                ['queries[]', JSON.stringify({ method: 'limit',  values: [LIMIT] })],
+                ['queries[]', JSON.stringify({ method: 'offset', values: [offset] })]
+            ]), { headers: { 'X-Appwrite-Project': CFG.APPWRITE_PROJECT } });
+            if (!res.ok) throw new Error('파일 목록 조회 실패 (' + res.status + ')');
+            var json = await res.json();
+            all = all.concat(json.files || []);
+            if (!json.files || json.files.length < LIMIT) break;
+            offset += LIMIT;
         }
-    });
+        // 날짜별로 하나만 (같은 날짜가 여러 개면 가장 나중에 올린 파일)
+        var byDate = {};
+        all.forEach(f => {
+            var d = extractDate(f);
+            if (!d) return;
+            if (!byDate[d] || f.$createdAt > byDate[d].createdAt) byDate[d] = { date: d, id: f.$id, name: f.name, createdAt: f.$createdAt };
+        });
+        return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    async function loadCsvRows(fileInfo) {
+        if (dataCache[fileInfo.date]) return dataCache[fileInfo.date];
+        var res = await fetch(awUrl('/storage/buckets/' + CFG.BUCKET_ID + '/files/' + fileInfo.id + '/download'));
+        if (!res.ok) throw new Error('파일 다운로드 실패 (' + res.status + ')');
+        var text = await res.text();
+        var parsed = Papa.parse(text, {
+            header: true, skipEmptyLines: true,
+            transformHeader: h => h.replace(/^﻿/, '').trim(),
+            transform: v => typeof v === 'string' ? v.trim() : v
+        });
+        var rows = parsed.data.filter(d => d.위도 && d.경도 && !isNaN(parseFloat(d.위도)) && !isNaN(parseFloat(d.경도)));
+        dataCache[fileInfo.date] = rows;
+        return rows;
+    }
+
+    // ===== 시작 =====
+    async function init() {
+        try {
+            setLoading(true, '기준일자 목록을 불러오는 중...');
+            dateFiles = await listDateFiles();
+            var sel = document.getElementById('dateSelect');
+            if (!dateFiles.length) {
+                sel.innerHTML = '<option value="">등록된 데이터 없음</option>';
+                setLoading(true, '등록된 실적 데이터가 없습니다. 관리자 페이지에서 CSV를 업로드해 주세요.');
+                document.querySelector('#loading .spinner').style.display = 'none';
+                return;
+            }
+            sel.innerHTML = dateFiles.map((f, i) =>
+                `<option value="${f.date}">${fmtDate(f.date)}${i === 0 ? ' (최신)' : ''}</option>`).join('');
+            sel.value = dateFiles[0].date;   // 항상 최신 일자로 시작
+            await showDate(dateFiles[0].date);
+        } catch (e) {
+            console.error(e);
+            setLoading(true, '데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요.');
+            document.querySelector('#loading .spinner').style.display = 'none';
+        }
+    }
+
+    async function showDate(date) {
+        var info = dateFiles.find(f => f.date === date);
+        if (!info) return;
+        setLoading(true, fmtDate(date) + ' 실적을 불러오는 중...');
+        try {
+            allData = await loadCsvRows(info);
+            rebuildMarkers();
+            refreshSubRegionOptions(true);
+            applyFilters();
+            if (regionScope) recalcRegionScope(false); else calculateVisibleStats();
+        } catch (e) {
+            console.error(e);
+            alert(fmtDate(date) + ' 데이터를 불러오지 못했습니다.');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function onDateChange() {
+        var d = document.getElementById('dateSelect').value;
+        if (d) showDate(d);
+    }
+
+    function togglePanel() {
+        const panel = document.getElementById('mainPanel');
+        const isCollapsed = panel.classList.toggle('collapsed');
+        document.getElementById('toggleBtn').innerHTML = isCollapsed ? '▼ 펼치기' : '▲ 접기';
+    }
 
     // ===== 시군구 경계선 =====
     var BOUNDARY_STYLE = { color: '#7b1fa2', weight: 3, opacity: 0.9, fillColor: '#7b1fa2', fillOpacity: 0.06 };
@@ -174,7 +308,6 @@
         .then(d => { boundaryData = d; })
         .catch(e => console.warn('경계 파일(region_boundary.geojson)을 불러오지 못했습니다:', e));
 
-    // 선택한 상세지역 테두리 표시. 그려졌으면 그 범위를 반환
     function drawBoundary(mainVal, subVal) {
         if (boundaryLayer) { map.removeLayer(boundaryLayer); boundaryLayer = null; }
         if (!boundaryData || mainVal === 'all' || subVal === 'all') return null;
@@ -185,190 +318,230 @@
         return boundaryLayer.getBounds();
     }
 
-    function togglePanel() {
-        const panel = document.getElementById('mainPanel');
-        const btn = document.getElementById('toggleBtn');
-        const isCollapsed = panel.classList.toggle('collapsed');
-        btn.innerHTML = isCollapsed ? '▼ 펼치기' : '▲ 접기';
-    }
+    // ===== 1. 마커 구성 (기준일자 바뀔 때마다 다시 만듦) =====
+    function rebuildMarkers() {
+        markers.forEach(m => { if (map.hasLayer(m)) map.removeLayer(m); });
+        markers = [];
 
-    // 1. 초기 마커 데이터 구성
-    function initMarkers() {
         allData.forEach(function(d) {
             var lat = parseFloat(d.위도), lng = parseFloat(d.경도);
-            var s_total = parseInt(d.총실적) || 0, s1 = parseInt(d.실적1) || 0, s2 = parseInt(d.실적2) || 0;
-            var g1 = (d.거래점1 || "").trim(), g2 = (d.거래점2 || "").trim();
-            var addr = (d.주소 || "").trim();
+            var s1 = parseInt(d.실적1) || 0, s2 = parseInt(d.실적2) || 0;
+            var g1 = (d.거래점1 || '').trim(), g2 = (d.거래점2 || '').trim();
+            var addr = (d.주소 || '').trim();
 
             var marker = L.marker([lat, lng]);
             var popupHtml = `<div style="font-size:13px; min-width:180px; max-width:220px;">
-                                <b style="font-size:14px; color:#333;">${d.판매점명}</b><br>
-                                <small style="color:#666;">${d.POS코드}</small><br>
-                                <div style="font-size:11px; color:#888; margin-top:2px; line-height:1.3;">${addr}</div>
+                                <b style="font-size:14px; color:#333;">${esc(d.판매점명)}</b><br>
+                                <small style="color:#666;">${esc(d.POS코드)}</small><br>
+                                <div style="font-size:11px; color:#888; margin-top:2px; line-height:1.3;">${esc(addr)}</div>
                                 <hr style="margin:6px 0; border:0.5px solid #eee">`;
-            if (g1) popupHtml += `<b>${g1}:</b> ${s1}건<br>`;
-            if (g2 && g2 !== "0" && g2 !== "") popupHtml += `<b>${g2}:</b> ${s2}건<br>`;
+            if (g1) popupHtml += `<b>${esc(g1)}:</b> ${s1}건<br>`;
+            if (g2 && g2 !== '0') popupHtml += `<b>${esc(g2)}:</b> ${s2}건<br>`;
             popupHtml += `</div>`;
-            
+
             marker.bindPopup(popupHtml, { closeButton: false, offset: L.point(0, -5) });
             marker.on('mouseover', function() { this.openPopup(); });
             marker.on('mouseout', function() { this.closePopup(); });
 
             marker.salesData = [];
             if (g1) marker.salesData.push({ name: g1, val: s1 });
-            if (g2 && g2 !== "0" && g2 !== "") marker.salesData.push({ name: g2, val: s2 });
-            marker.s_total = s_total;
-            marker.region_full = d.지역합;
+            if (g2 && g2 !== '0') marker.salesData.push({ name: g2, val: s2 });
+            marker.region_full = (d.지역합 || '').trim();
 
             markers.push(marker);
         });
-    }
 
-    // 2. 대리점 목록 초기화 (처음엔 전체 선택)
-    function populateAgencies() {
+        // 대리점 목록 갱신: 처음엔 전체 선택, 이후엔 기존 선택 유지(새로 생긴 대리점은 선택 상태로 추가)
         var set = new Set();
         markers.forEach(m => m.salesData.forEach(item => set.add(item.name)));
+        var prevAll = new Set(allAgencies);
+        var wasAllSelected = selectedAgencies.size === allAgencies.length;
         allAgencies = Array.from(set);
-        selectedAgencies = new Set(allAgencies);
-        applyFilters();
+        if (firstLoad || wasAllSelected) {
+            selectedAgencies = new Set(allAgencies);
+        } else {
+            allAgencies.forEach(a => { if (!prevAll.has(a)) selectedAgencies.add(a); });
+        }
+        firstLoad = false;
     }
 
-    // 3. 전체 선택/해제
+    // ===== 2. 전체/개별 선택 =====
     function toggleAllAgencies(source) {
         selectedAgencies = source.checked ? new Set(allAgencies) : new Set();
         applyFilters();
     }
-
-    // 순위 리스트의 개별 체크박스 클릭
     function toggleAgency(name, checked) {
         if (checked) selectedAgencies.add(name); else selectedAgencies.delete(name);
         applyFilters();
     }
 
-    // 4. 필터 적용 및 마커(아이콘) 재계산 핵심 로직
+    // ===== 3. 필터 적용 + 마커 아이콘 재계산 =====
     function applyFilters() {
-        document.getElementById('selectAllAgencies').checked = (selectedAgencies.size === allAgencies.length);
+        document.getElementById('selectAllAgencies').checked =
+            allAgencies.length > 0 && allAgencies.every(a => selectedAgencies.has(a));
 
         markers.forEach(marker => {
-            // 마커의 실적 중 체크된 대리점의 실적만 추출
             var relevantSales = marker.salesData.filter(item => selectedAgencies.has(item.name));
-            
             if (relevantSales.length > 0) {
-                // 선택된 대리점 실적이 있으면 지도에 표시
                 if (!map.hasLayer(marker)) map.addLayer(marker);
-                
-                // 마커의 크기(숫자)와 비율을 '선택된 대리점 기준'으로 재계산
-                var newTotal = 0;
-                var newUmost = 0;
+                var newTotal = 0, newUmost = 0;
                 relevantSales.forEach(item => {
                     newTotal += item.val;
-                    if(item.name === '유모스트') newUmost += item.val;
+                    if (item.name === '유모스트') newUmost += item.val;
                 });
                 var newRatio = newTotal > 0 ? (newUmost / newTotal) * 100 : 0;
-                
-                var newIcon = L.divIcon({
+                marker.setIcon(L.divIcon({
                     className: 'custom-div-icon',
                     html: `<div class="pie-marker" style="width:32px; height:32px; background: conic-gradient(#e74c3c 0% ${newRatio}%, #3498db ${newRatio}% 100%);"><span class="marker-text">${newTotal}</span></div>`,
                     iconSize: [32, 32], iconAnchor: [16, 16]
-                });
-                marker.setIcon(newIcon);
-                
-            } else {
-                // 선택된 대리점 실적이 전혀 없으면 지도에서 숨김
-                if (map.hasLayer(marker)) map.removeLayer(marker);
+                }));
+            } else if (map.hasLayer(marker)) {
+                map.removeLayer(marker);
             }
         });
-        
-        calculateVisibleStats(); // 현황판 업데이트
+
+        calculateVisibleStats();
     }
 
-    // 5. 실시간 통계 계산
-    //  - 화면 안에 있는 대리점은 체크 여부와 관계없이 모두 리스트에 표시 (다시 체크할 수 있도록)
-    //  - 합계/점유율은 체크된 대리점만 계산
-    function escAttr(v) { return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+    // ===== 4. 실적 순위 계산 =====
+    //  - 상세지역 선택 상태: 해당 지역(지역합 일치) 판매점 전체 기준
+    //  - 상세지역 미선택 또는 선택 후 많이 확대한 상태: 화면에 보이는 영역 기준
+    //  - 판매점수 = 해당 대리점 실적이 1건 이상인 판매점 수
+    //  - 합계/점유율은 체크된 대리점만 계산, 체크 해제 대리점도 목록엔 남김(다시 체크 가능)
+    function isRegionMode() {
+        return regionScope && map.getZoom() < regionScope.baseZoom + ZOOM_TO_VIEW_MODE;
+    }
 
     function calculateVisibleStats() {
+        var regionMode = isRegionMode();
         var bounds = map.getBounds();
-        var companyStats = {};
-        var totalVisibleSum = 0;
+        var stats = {};             // { 대리점: { val, stores } }
+        var totalSum = 0;
+        var totalStoreSet = 0;
 
         markers.forEach(function(marker) {
-            if (!bounds.contains(marker.getLatLng())) return;
+            var inScope = regionMode ? (marker.region_full === regionScope.name)
+                                     : bounds.contains(marker.getLatLng());
+            if (!inScope) return;
+            var countedForTotal = false;
             marker.salesData.forEach(function(item) {
-                companyStats[item.name] = (companyStats[item.name] || 0) + item.val;
-                if (selectedAgencies.has(item.name)) totalVisibleSum += item.val;
+                if (!stats[item.name]) stats[item.name] = { val: 0, stores: 0 };
+                stats[item.name].val += item.val;
+                if (item.val > 0) stats[item.name].stores += 1;
+                if (selectedAgencies.has(item.name)) {
+                    totalSum += item.val;
+                    if (item.val > 0 && !countedForTotal) { totalStoreSet++; countedForTotal = true; }
+                }
             });
         });
 
-        // 실적 내림차순 (체크 해제해도 자리가 바뀌지 않아 다시 체크하기 쉬움)
-        var sorted = Object.entries(companyStats).sort((a, b) =>
-            (b[1] - a[1]) || a[0].localeCompare(b[0], 'ko'));
+        // 제목/안내 문구
+        var titleEl = document.getElementById('statTitle'), hintEl = document.getElementById('scopeHint');
+        if (regionMode) {
+            titleEl.textContent = regionScope.label + ' 실적 순위';
+            hintEl.textContent = '확대하면 화면내 실적으로 전환됩니다';
+            hintEl.style.display = '';
+        } else if (regionScope) {
+            titleEl.textContent = '화면내 실적 순위';
+            hintEl.textContent = '축소하면 ' + regionScope.label + ' 실적으로 돌아갑니다';
+            hintEl.style.display = '';
+        } else {
+            titleEl.textContent = '화면내 실적 순위';
+            hintEl.style.display = 'none';
+        }
+
+        // 실적 내림차순 (체크 해제해도 자리가 바뀌지 않음)
+        var sorted = Object.entries(stats).sort((a, b) => (b[1].val - a[1].val) || a[0].localeCompare(b[0], 'ko'));
 
         var rank = 0;
-        var listHtml = sorted.map(function([name, val]) {
+        var listHtml = sorted.map(function([name, s]) {
             var checked = selectedAgencies.has(name);
             var isUmost = (name === '유모스트');
             var rankText = checked ? (++rank) : '-';
+            var base = `${s.stores.toLocaleString()}개점/${s.val.toLocaleString()}건`;
             var valueText = checked
-                ? `${val.toLocaleString()}건 (${totalVisibleSum > 0 ? (val / totalVisibleSum * 100).toFixed(1) : 0}%)`
-                : `${val.toLocaleString()}건`;
+                ? `${base}(${totalSum > 0 ? (s.val / totalSum * 100).toFixed(1) : 0}%)`
+                : base;
             return `<label class="company-item ${isUmost ? 'is-umost' : ''} ${checked ? '' : 'unchecked'}">
-                        <input type="checkbox" class="rank-chk" data-name="${escAttr(name)}" ${checked ? 'checked' : ''}
+                        <input type="checkbox" class="rank-chk" data-name="${esc(name)}" ${checked ? 'checked' : ''}
                                onchange="toggleAgency(this.dataset.name, this.checked)">
                         <span class="rank-num">${rankText}</span>
-                        <span class="company-name">${name}</span>
+                        <span class="company-name">${esc(name)}</span>
                         <span class="company-value">${valueText}</span>
                     </label>`;
         }).join('');
 
         var list = document.getElementById('rankList');
-        var prevScroll = list.scrollTop;   // 새로 그려도 스크롤 위치 유지
-        list.innerHTML = listHtml || "<div style='text-align:center; color:#999; font-size:12px; margin-top:5px;'>화면내 데이터 없음</div>";
+        var prevScroll = list.scrollTop;
+        list.innerHTML = listHtml || "<div style='text-align:center; color:#999; font-size:12px; margin-top:5px;'>표시할 데이터 없음</div>";
 
         // 5개까지만 보이도록 높이 제한, 나머지는 스크롤
         var rows = list.querySelectorAll('.company-item');
         list.style.maxHeight = rows.length > 5 ? (rows[5].offsetTop - rows[0].offsetTop) + 'px' : 'none';
         list.scrollTop = prevScroll;
 
-        document.getElementById('totalSum').innerText = totalVisibleSum.toLocaleString();
+        document.getElementById('totalSum').innerText = totalSum.toLocaleString();
+        document.getElementById('totalStores').innerText = totalStoreSet.toLocaleString();
     }
 
     map.on('moveend', calculateVisibleStats);
 
-    function handleMainRegionChange() {
+    // ===== 5. 권역/상세지역 =====
+    function refreshSubRegionOptions(keepValue) {
         var mainVal = document.getElementById('mainRegion').value;
         var subSelect = document.getElementById('subRegion');
+        var prev = subSelect.value;
         subSelect.innerHTML = '<option value="all">상세 지역</option>';
-        if (mainVal !== 'all') {
-            var filteredSub = allData.filter(d => d.지역합.startsWith(mainVal)).map(d => d.지역합.replace(mainVal + ' ', '').trim());
-            [...new Set(filteredSub)].sort().forEach(s => {
-                var opt = document.createElement('option');
-                opt.value = s; opt.innerHTML = s;
-                subSelect.appendChild(opt);
-            });
-        }
+        if (mainVal === 'all') return;
+        var subs = allData.filter(d => (d.지역합 || '').startsWith(mainVal + ' '))
+                          .map(d => d.지역합.slice(mainVal.length + 1).trim());
+        [...new Set(subs)].sort((a, b) => a.localeCompare(b, 'ko')).forEach(s => subSelect.add(new Option(s, s)));
+        if (keepValue && [...subSelect.options].some(o => o.value === prev)) subSelect.value = prev;
+    }
+
+    function handleMainRegionChange() {
+        refreshSubRegionOptions(false);
         updateMap();
     }
 
+    // 지역 선택 시 지도 이동 + 집계 범위 설정
     function updateMap() {
+        recalcRegionScope(true);
+    }
+
+    function recalcRegionScope(moveMap) {
         var mainVal = document.getElementById('mainRegion').value;
         var subVal = document.getElementById('subRegion').value;
+
         var bounds = [];
         markers.forEach(function(marker) {
-            if ((mainVal === 'all' || marker.region_full.startsWith(mainVal)) && (subVal === 'all' || marker.region_full.endsWith(subVal))) {
-                // 해당 지역에 속하고, 지도에 표시(필터 통과)된 마커를 기준으로 이동
+            if ((mainVal === 'all' || marker.region_full.startsWith(mainVal + ' ')) &&
+                (subVal === 'all' || marker.region_full === mainVal + ' ' + subVal)) {
                 if (map.hasLayer(marker)) bounds.push(marker.getLatLng());
             }
         });
+
         var areaBounds = drawBoundary(mainVal, subVal);
-        if (areaBounds) {
-            // 경계 전체가 보이도록, PC에서는 오른쪽 패널에 가리지 않게 여백 확보
-            var panel = document.getElementById('mainPanel');
-            var rightPad = (window.innerWidth > 600 && !panel.classList.contains('collapsed')) ? panel.offsetWidth + 30 : 20;
-            map.fitBounds(areaBounds, { paddingTopLeft: [20, 20], paddingBottomRight: [rightPad, 20] });
+        var target = areaBounds || (bounds.length ? L.latLngBounds(bounds) : null);
+
+        // PC에서는 오른쪽 패널에 가리지 않게 여백 확보
+        var panel = document.getElementById('mainPanel');
+        var rightPad = (window.innerWidth > 600 && !panel.classList.contains('collapsed')) ? panel.offsetWidth + 30 : 20;
+        var fitOpts = { paddingTopLeft: [20, 20], paddingBottomRight: [rightPad, 20] };
+
+        if (mainVal !== 'all' && subVal !== 'all') {
+            // 상세지역 집계 모드: 지역에 맞춘 줌을 기준으로 4단계 이상 확대하면 화면내 실적으로 전환
+            var baseZoom = target ? map.getBoundsZoom(target, false, L.point(20 + rightPad, 40)) : map.getZoom();
+            regionScope = { name: mainVal + ' ' + subVal, label: subVal, baseZoom: Math.min(baseZoom, map.getMaxZoom()) };
+        } else {
+            regionScope = null;
         }
-        else if (bounds.length > 0) map.fitBounds(bounds);
+
+        if (moveMap && target) map.fitBounds(target, fitOpts);
+        calculateVisibleStats();
     }
+
+    init();
 </script>
 </body>
 </html>
